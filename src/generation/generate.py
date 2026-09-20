@@ -7,6 +7,11 @@ generator can produce a faithful, relevant answer from bad context (masking
 a retrieval regression) or an unfaithful answer from perfect context. This
 module only ever measures the second kind of failure.
 
+Metrics (all three exist in both modes):
+  - faithfulness       heuristic: answer vocabulary grounded in context | ragas: LLM judge
+  - answer_relevance   heuristic: query vocabulary covered by the answer | ragas: LLM judge
+  - context_relevance  heuristic: query vocabulary covered by the context | ragas: LLM judge
+
 Default mode is a free, deterministic lexical-overlap heuristic (no API key
 needed, safe for CI). Setting USE_RAGAS=true (with an API key and `ragas`
 installed via `pip install -e ".[ragas]"`) switches to Ragas's
@@ -53,12 +58,28 @@ def heuristic_answer_relevance(answer: str, query: str) -> float:
     return _lexical_overlap(query_tokens, answer_tokens)
 
 
-def evaluate_generation_heuristic(query: str, retrieved_texts: list[str]) -> dict:
-    answer = generate_answer(query, retrieved_texts)
+def heuristic_context_relevance(query: str, retrieved_texts: list[str]) -> float:
+    """Proxy for context relevance: fraction of the query's vocabulary present
+    in the retrieved context as a whole. Unlike answer relevance it ignores the
+    generated answer, so it isolates how useful the retrieved context was."""
+    query_tokens = set(tokenize(query))
+    context_tokens = set(tokenize(" ".join(retrieved_texts)))
+    return _lexical_overlap(query_tokens, context_tokens)
+
+
+def evaluate_generation_heuristic(query: str, retrieved_texts: list[str], answer: str | None = None) -> dict:
+    """Free, deterministic generation metrics (no LLM, no network).
+
+    Returns faithfulness, answer_relevance and context_relevance, all lexical
+    proxies in [0, 1]. Pass ``answer`` to score an externally generated answer.
+    """
+    if answer is None:
+        answer = generate_answer(query, retrieved_texts)
     return {
         "answer": answer,
         "faithfulness": heuristic_faithfulness(answer, retrieved_texts),
         "answer_relevance": heuristic_answer_relevance(answer, query),
+        "context_relevance": heuristic_context_relevance(query, retrieved_texts),
         "method": "heuristic",
     }
 
@@ -68,17 +89,16 @@ def evaluate_generation_ragas(query: str, retrieved_texts: list[str]) -> dict:
     OPENAI_API_KEY set. Raises if ragas isn't installed or no key is set —
     callers should check USE_RAGAS and fall back to the heuristic path."""
     from ragas import SingleTurnSample
-    from ragas.metrics import Faithfulness, AnswerRelevancy
+    from ragas.metrics import AnswerRelevancy, Faithfulness, LLMContextPrecisionWithoutReference
 
     answer = generate_answer(query, retrieved_texts)
     sample = SingleTurnSample(user_input=query, response=answer, retrieved_contexts=retrieved_texts)
 
-    faithfulness_score = Faithfulness().single_turn_score(sample)
-    relevance_score = AnswerRelevancy().single_turn_score(sample)
     return {
         "answer": answer,
-        "faithfulness": faithfulness_score,
-        "answer_relevance": relevance_score,
+        "faithfulness": Faithfulness().single_turn_score(sample),
+        "answer_relevance": AnswerRelevancy().single_turn_score(sample),
+        "context_relevance": LLMContextPrecisionWithoutReference().single_turn_score(sample),
         "method": "ragas",
     }
 
@@ -92,3 +112,61 @@ def evaluate_generation(query: str, retrieved_texts: list[str]) -> dict:
         except ImportError:
             pass  # ragas extra not installed; fall back below
     return evaluate_generation_heuristic(query, retrieved_texts)
+
+
+# --- Cited answers for the RAG demo ------------------------------------------------
+
+def _split_sentences(text: str) -> list[str]:
+    return [s.strip() for s in text.replace("\n", " ").split(". ") if s.strip()]
+
+
+def build_llm_prompt(query: str, passages: list[dict]) -> str:
+    """Prompt asking an LLM to answer only from numbered sources and cite them as [n]."""
+    sources = "\n\n".join(f"[{i}] {p['title']}\n{p['text']}" for i, p in enumerate(passages, start=1))
+    return (
+        "Answer the question using ONLY the numbered sources below. Cite sources inline as [n]. "
+        "If the sources do not contain the answer, say so.\n\n"
+        f"Sources:\n{sources}\n\nQuestion: {query}"
+    )
+
+
+def _generate_extractive(query: str, passages: list[dict], max_sources: int = 2) -> dict:
+    q_tokens = set(tokenize(query))
+    parts, citations = [], []
+    for rank, p in enumerate(passages[:max_sources], start=1):
+        sentences = _split_sentences(p["text"])
+        if not sentences:
+            continue
+        best = max(sentences, key=lambda s: len(q_tokens & set(tokenize(s))))
+        parts.append(f"{best.rstrip('.')}. [{rank}]")
+        citations.append({"passage_id": p["passage_id"], "source_number": rank})
+    return {"answer": " ".join(parts), "citations": citations, "method": "extractive"}
+
+
+def _generate_llm(query: str, passages: list[dict]) -> dict:
+    import anthropic  # optional dependency: pip install anthropic
+
+    client = anthropic.Anthropic()
+    model = os.environ.get("GENERATION_MODEL", "claude-haiku-4-5-20251001")
+    msg = client.messages.create(
+        model=model, max_tokens=500, messages=[{"role": "user", "content": build_llm_prompt(query, passages)}])
+    answer = "".join(block.text for block in msg.content if getattr(block, "type", "") == "text")
+    cited = [i for i in range(1, len(passages) + 1) if f"[{i}]" in answer]
+    citations = [{"passage_id": passages[i - 1]["passage_id"], "source_number": i} for i in cited]
+    return {"answer": answer, "citations": citations, "method": f"llm:{model}"}
+
+
+def generate_cited_answer(query: str, passages: list[dict]) -> dict:
+    """Answer from retrieved passages (rank order) with citations.
+
+    Extractive by default (no API key, deterministic). If GENERATION_BACKEND=llm and
+    ANTHROPIC_API_KEY is set, uses an Anthropic model; falls back to extractive if the
+    ``anthropic`` package is missing. The LLM path has not been exercised against the
+    live API in this repository's tests.
+    """
+    if os.environ.get("GENERATION_BACKEND", "extractive") == "llm" and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            return _generate_llm(query, passages)
+        except ImportError:
+            pass
+    return _generate_extractive(query, passages)

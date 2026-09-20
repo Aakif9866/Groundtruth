@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Groundtruth RAG demo</title>
+<style>
+:root{--bg:#fff;--fg:#1c2530;--muted:#5d6b7a;--line:#dde3ea;--card:#f6f8fa;--accent:#2a6f97}
+@media(prefers-color-scheme:dark){:root{--bg:#12171d;--fg:#e6ebf0;--muted:#9aa7b4;--line:#2a343f;--card:#1a212a;--accent:#6fb1d6}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.sub{color:var(--muted);margin:0 0 16px}
+form{display:flex;flex-wrap:wrap;gap:8px}
+input[type=text]{flex:1 1 320px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);font:inherit}
+select,button{padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);font:inherit}
+button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:8px}
+.tag{display:inline-block;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:0 8px;margin-right:6px}
+ol{padding-left:20px;margin:0}li{margin:8px 0}.snip{color:var(--muted);font-size:13px}
+.err{color:#c0392b}
+</style>
+</head>
+<body>
+<main>
+<h1>Groundtruth RAG demo</h1>
+<p class="sub">Retrieval and generation are shown separately so you can tell which stage went wrong.</p>
+<form id="f">
+  <input type="text" id="q" placeholder="Ask a question, e.g. What warnings must be given before custodial questioning?" required>
+  <select id="dataset"><option value="real_world">real_world</option><option value="synthetic">synthetic</option></select>
+  <select id="config"><option>baseline</option><option>hybrid</option><option>reranker</option><option>chunk_change</option><option>broken</option></select>
+  <button type="submit">Ask</button>
+</form>
+<div id="out"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+$('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('out').innerHTML = '<p class="sub">Working&hellip;</p>';
+  try {
+    const r = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({query:$('q').value, config:$('config').value, dataset:$('dataset').value, top_k:5})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail));
+    const ret = d.retrieval, gen = d.generation;
+    const items = ret.results.map(x => `<li><b>${esc(x.title)}</b>
+      <div><span class="tag">rank ${x.rank}</span><span class="tag">${esc(ret.score_type)} ${x.score}</span><span class="tag">${esc(x.passage_id)}</span></div>
+      <div class="snip">${esc(x.snippet)}&hellip;</div></li>`).join('');
+    const golden = ret.golden_check ? `<p class="sub">This exact question is in the golden set (${esc(ret.golden_check.query_id)}): relevant passage ranks ${esc(JSON.stringify(ret.golden_check.relevant_ranks))}.</p>` : '';
+    const cites = gen.citations.map(c => `[${c.source_number}] ${esc(c.passage_id)}`).join(', ') || 'none';
+    const m = gen.heuristic_metrics;
+    $('out').innerHTML = `
+      <h2>1. Retrieval <span class="tag">${esc(ret.config)}</span><span class="tag">${esc(ret.dataset)} v${esc(ret.dataset_version)}</span></h2>
+      <div class="panel"><ol>${items}</ol>${golden}</div>
+      <h2>2. Generation <span class="tag">${esc(gen.method)}</span></h2>
+      <div class="panel"><p>${esc(gen.answer)}</p><p class="sub">Citations: ${cites}</p>
+      <p class="sub">Heuristic generation metrics (lexical proxies, not retrieval quality): faithfulness ${m.faithfulness}, answer relevance ${m.answer_relevance}, context relevance ${m.context_relevance}</p></div>`;
+  } catch (err) {
+    $('out').innerHTML = `<p class="err">${esc(err.message)}</p>`;
+  }
+});
+</script>
+</body>
+</html>

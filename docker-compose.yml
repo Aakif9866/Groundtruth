@@ -1,0 +1,17 @@
+# One image, several entry points:
+#   docker compose up                                  # RAG demo at http://localhost:8000
+#   docker compose run --rm app pytest                 # test suite
+#   docker compose run --rm app python -m src.evaluation.evaluate
+#   docker compose run --rm app python -m src.evaluation.run --config experiments/hybrid.yaml
+# Optional LLM features read keys from the environment / a local .env file (never committed).
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./runs:/app/runs
+      - ./reports:/app/reports
