@@ -1,0 +1,38 @@
+name: Retrieval Evaluation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run unit tests and the regression gate
+        # EVAL_CONFIG defaults to "baseline" - this must stay green on main.
+        # To see it deliberately fail, run this step locally with
+        # EVAL_CONFIG=broken.
+        run: pytest -q
+
+      - name: Run retrieval evaluation and produce the comparison report
+        run: python -m src.evaluation.evaluate
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-report
+          path: |
+            reports/comparison.md
+            reports/comparison.csv

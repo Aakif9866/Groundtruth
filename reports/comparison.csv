@@ -1,0 +1,6 @@
+configuration,chunk_size,retrieval_method,reranker,candidate_pool,recall@5,recall@10,mrr,ndcg@10,delta_recall@10
+baseline,300,dense,False,full,0.975,0.985,0.8228,0.859,0.0
+chunk_change,100,dense,False,full,0.985,0.99,0.779,0.8221,0.005
+hybrid,300,hybrid,False,full,0.965,1.0,0.8658,0.8956,0.015
+reranker,300,dense,True,full,0.985,0.995,0.9091,0.9279,0.01
+broken,40,dense,False,3,0.015,0.015,0.02,0.0161,-0.97
