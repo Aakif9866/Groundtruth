@@ -1,0 +1,18 @@
+name: chunk_change
+description: "Same as baseline but with a much smaller chunk size."
+
+retrieval:
+  dense: true
+  bm25: false
+  fusion: null
+
+chunking:
+  size: 100
+  overlap: 20
+
+reranker:
+  enabled: false
+  model: null
+  top_n: 20
+
+candidate_pool: null

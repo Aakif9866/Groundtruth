@@ -1,0 +1,18 @@
+name: broken
+description: "Deliberately bad: tiny chunks and a candidate pool clamped to 3 chunks, so most relevant documents are unreachable."
+
+retrieval:
+  dense: true
+  bm25: false
+  fusion: null
+
+chunking:
+  size: 40
+  overlap: 0
+
+reranker:
+  enabled: false
+  model: null
+  top_n: 20
+
+candidate_pool: 3

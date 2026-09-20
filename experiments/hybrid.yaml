@@ -1,0 +1,18 @@
+name: hybrid
+description: "Baseline chunking; dense + BM25 combined via Reciprocal Rank Fusion."
+
+retrieval:
+  dense: true
+  bm25: true
+  fusion: rrf
+
+chunking:
+  size: 300
+  overlap: 50
+
+reranker:
+  enabled: false
+  model: null
+  top_n: 20
+
+candidate_pool: null

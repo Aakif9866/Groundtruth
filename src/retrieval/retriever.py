@@ -23,16 +23,16 @@ def tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
 
 
-@lru_cache(maxsize=1)
-def _get_embedder():
+@lru_cache(maxsize=4)
+def _get_embedder(model_name: str = EMBEDDING_MODEL_NAME):
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(EMBEDDING_MODEL_NAME)
+    return SentenceTransformer(model_name)
 
 
-@lru_cache(maxsize=1)
-def _get_reranker():
+@lru_cache(maxsize=4)
+def _get_reranker(model_name: str = RERANKER_MODEL_NAME):
     from sentence_transformers import CrossEncoder
-    return CrossEncoder(RERANKER_MODEL_NAME)
+    return CrossEncoder(model_name)
 
 
 @dataclass
@@ -63,11 +63,15 @@ def chunk_document(passage_id: str, text: str, chunk_size: int, overlap: int) ->
 
 
 class Retriever:
-    def __init__(self, corpus: list[dict], config_name: str):
-        if config_name not in CONFIGS:
-            raise ValueError(f"Unknown retrieval config: {config_name}")
+    def __init__(self, corpus: list[dict], config_name: str, config: dict | None = None):
+        """Build a retriever. Pass ``config`` (a translated experiment dict) to
+        use an ad-hoc config; otherwise ``config_name`` is looked up in CONFIGS."""
+        if config is None:
+            if config_name not in CONFIGS:
+                raise ValueError(f"Unknown retrieval config: {config_name}")
+            config = CONFIGS[config_name]
         self.config_name = config_name
-        self.config = CONFIGS[config_name]
+        self.config = config
         self.corpus_by_id = {d["passage_id"]: d for d in corpus}
 
         self.chunks: list[Chunk] = []
@@ -86,12 +90,12 @@ class Retriever:
 
     def _ensure_embeddings(self):
         if self._chunk_embeddings is None:
-            embedder = _get_embedder()
+            embedder = _get_embedder(self.config.get("embedding_model", EMBEDDING_MODEL_NAME))
             self._chunk_embeddings = embedder.encode(self._chunk_texts, show_progress_bar=False, normalize_embeddings=True)
 
     def _dense_scores(self, query: str) -> np.ndarray:
         self._ensure_embeddings()
-        embedder = _get_embedder()
+        embedder = _get_embedder(self.config.get("embedding_model", EMBEDDING_MODEL_NAME))
         q_emb = embedder.encode([query], show_progress_bar=False, normalize_embeddings=True)
         return cosine_similarity(q_emb, self._chunk_embeddings)[0]
 
@@ -134,7 +138,7 @@ class Retriever:
         if self.config.get("reranker"):
             n = pool_size or self.config.get("rerank_pool_size", 20)
             candidate_idxs = list(order[:n])
-            reranker = _get_reranker()
+            reranker = _get_reranker(self.config.get("reranker_model") or RERANKER_MODEL_NAME)
             pairs = [(query, self._chunk_texts[i]) for i in candidate_idxs]
             rerank_scores = reranker.predict(pairs)
             reranked = sorted(zip(candidate_idxs, rerank_scores), key=lambda x: -x[1])
@@ -142,14 +146,20 @@ class Retriever:
 
         return [(self.chunks[i], float(scores[i])) for i in order]
 
+    def retrieve_scored(self, query: str, top_k: int = TOP_K) -> list[tuple[str, float]]:
+        """Up to top_k unique (passage_id, score) pairs, best first. Each passage
+        keeps the score of its best-ranked chunk. The score scale depends on the
+        config: cosine (dense), fused RRF (hybrid) or cross-encoder logit (reranker)."""
+        seen: dict[str, float] = {}
+        for chunk, score in self.retrieve_chunks(query):
+            if chunk.passage_id not in seen:
+                seen[chunk.passage_id] = score
+            if len(seen) >= top_k:
+                break
+        return list(seen.items())
+
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[str]:
         """Returns up to top_k unique passage_ids, ranked best-first (chunk
         results deduplicated to their parent document since golden relevance
         labels are document-level)."""
-        seen = []
-        for chunk, _score in self.retrieve_chunks(query):
-            if chunk.passage_id not in seen:
-                seen.append(chunk.passage_id)
-            if len(seen) >= top_k:
-                break
-        return seen
+        return [pid for pid, _ in self.retrieve_scored(query, top_k)]
