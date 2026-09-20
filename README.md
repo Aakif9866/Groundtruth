@@ -1,185 +1,194 @@
 # Groundtruth — Retrieval Evaluation & Regression Harness
 
-A small, self-contained harness for measuring RAG retrieval quality
-objectively: a versioned golden dataset, four+ retrieval configurations
-evaluated against it, category-level Recall@K / MRR / nDCG, a comparison
-report with deltas, an automated CI regression gate, and rule-based error
-analysis on the queries that actually fail.
+Groundtruth measures whether a change to a RAG retrieval pipeline made it better or worse, using a
+versioned golden dataset, paired-bootstrap statistics, rule-based failure diagnosis, and a CI gate that
+fails the build on a Recall@10 regression. A small RAG demo app shows retrieval and generation side by
+side so you can tell which stage caused a bad answer.
 
-## Problem
+> **The main synthetic dataset is fictional.** No real law-firm documents are used. A second, tiny
+> benchmark of real public-domain legal text (`data/real_world/`) exists to check generalization. See
+> [Limitations](#13-limitations).
 
-Imagine a 60-attorney law firm with 20+ years of case files, opinions,
-filings, and research memos, backed by a retrieval-based research
-assistant. Every few weeks an engineer changes something — chunk size,
-embedding model, dense vs. hybrid retrieval, a reranker — and the only
-available answer to "did this help?" is a few people trying some queries
-and eyeballing the results. For a system where a missed precedent can be
-a serious problem, that isn't good enough. This project builds the
-missing piece: an objective, repeatable way to answer that question.
+## Contents
 
-## What This Project Demonstrates
+1. [Problem](#1-problem) · 2. [Why retrieval evaluation matters](#2-why-retrieval-evaluation-matters) ·
+3. [Architecture](#3-architecture) · 4. [Dataset methodology](#4-dataset-methodology) ·
+5. [Retrieval configurations](#5-retrieval-configurations) · 6. [Metrics](#6-metrics) ·
+7. [Statistical methodology](#7-statistical-methodology) · 8. [Error analysis](#8-error-analysis) ·
+9. [CI regression gate](#9-ci-regression-gate) · 10. [RAG demonstration](#10-rag-demonstration) ·
+11. [Example results](#11-example-results) · 12. [Reproducibility](#12-reproducibility) ·
+13. [Limitations](#13-limitations) · 14. [Future work](#14-future-work) ·
+15. [How to run locally](#15-how-to-run-locally) · 16. [How to run CI](#16-how-to-run-ci) ·
+17. [Project structure](#17-project-structure)
 
-- **A versioned, human-review-gated golden dataset** — not hand-picked
-  favorable examples, but a structured set built from templates, then
-  validated programmatically before being marked "reviewed."
-- **Retrieval metrics computed for real** — Recall@5, Recall@10, MRR, and
-  nDCG@10, overall and broken down by query category.
-- **Experiment comparison** — the same golden set run against multiple
-  retrieval configurations, with deltas relative to a baseline.
-- **A CI regression gate** — an automated test that fails the build if
-  Recall@10 drops by more than a configurable threshold (default 1
-  percentage point) versus an approved baseline.
-- **Error analysis** — the worst-performing real queries, with a
-  failure reason derived from actual retrieval signals (never invented).
-- **Generation evaluation, kept separate from retrieval evaluation** — a
-  small generation layer with its own metrics (faithfulness, answer
-  relevance), architecturally isolated so the two are never blended into
-  one score.
+## 1. Problem
 
-## Architecture
+A law firm's research assistant retrieves passages from decades of opinions, filings and memos. Every few
+weeks someone changes the chunk size, the embedding model, dense vs. hybrid search, or adds a reranker.
+"Did that help?" is usually answered by trying a handful of queries by eye. A missed precedent is costly,
+and a handful of queries cannot show a regression that affects a specific query type.
+
+## 2. Why retrieval evaluation matters
+
+- **Retrieval failures and generation failures are different problems.** If the right passage is never
+  retrieved, no generator can answer correctly; if it is retrieved but the answer is unfaithful, the fix
+  is elsewhere. Blending both into one score hides which one you have, so this project never does.
+- **Aggregate numbers hide categories.** A change can help statute lookups and hurt multi-hop questions.
+- **A higher number is not always a real difference.** With ~100 queries, small deltas can be noise; this
+  project reports confidence intervals instead of only point estimates.
+
+## 3. Architecture
 
 Retrieval evaluation:
 
 ```mermaid
 flowchart TD
-    A[Synthetic Documents] --> B[Corpus / Chunks]
-    B --> C[Retrieval Configurations]
-    C --> D[Retriever: dense / BM25 / hybrid / reranker]
-    D --> E[Top-K Results per Query]
-    F[Golden Dataset] --> G[Recall@K / MRR / nDCG]
-    E --> G
-    G --> H[Comparison Report]
-    H --> I[CI Regression Gate]
+    A["Corpus (synthetic or real_world)"] --> B["Chunking"]
+    Y["experiments/*.yaml"] --> C["Retrieval configuration"]
+    B --> D["Retriever: dense / BM25+RRF / reranker"]
+    C --> D
+    D --> E["Top-K passages per query"]
+    G["Golden dataset (versioned)"] --> H["Recall at K, MRR, nDCG"]
+    E --> H
+    H --> I["Comparison, bootstrap CIs, error taxonomy"]
+    I --> J["runs/ and reports/"]
+    J --> K["CI regression gate: Recall at 10"]
 ```
 
-Generation evaluation (deliberately a separate pipeline):
+Generation evaluation (a separate pipeline, never merged with the one above):
 
 ```mermaid
 flowchart TD
-    A[Retrieved Context] --> B[Generator]
-    B --> C[Answer]
-    C --> D[Faithfulness + Answer Relevance]
+    A["Retrieved context"] --> B["Generator"]
+    B --> C["Answer with citations"]
+    C --> D["Faithfulness, answer relevance, context relevance"]
 ```
 
-**These two diagrams never merge.** The CI regression gate only ever looks
-at Recall@10 from the first pipeline. A generation problem (an unfaithful
-or off-target answer) and a retrieval problem (the right document was
-never found) are different failures with different fixes, and conflating
-them into one score would hide which one you actually have.
+RAG demo request flow:
 
-## Dataset
+```mermaid
+flowchart LR
+    U["Browser page"] --> F["FastAPI /ask"]
+    F --> R["Retriever (+ optional reranker)"]
+    R --> G["Answer generator"]
+    G --> O["Response: retrieval block + generation block"]
+```
 
-`data/corpus.jsonl` and `data/golden_set.jsonl` are **entirely synthetic**
-— not real law-firm documents. They are generated by a seeded, template-based
-script (`scripts/build_dataset.py`) that builds "clusters" of one legal
-doctrine each (across 8 practice areas: contracts, torts, employment, IP,
-criminal procedure, evidence, corporate, real estate), and produces up to
-four related documents per cluster — an opinion, a statute section, a
-procedural filing, and an internal memo. Every golden query is derived from
-the same cluster as the passage(s) it targets, so relevance labels are
-correct by construction.
+## 4. Dataset methodology
 
-- **158 corpus documents**, **100 golden queries**, 20 per category:
-  `precedent`, `statute`, `procedural`, `factual`, `multi_hop`.
-- `scripts/validate_dataset.py` performs a programmatic review pass
-  (referenced passage IDs exist, no duplicate queries, minimum document
-  length, category balance) and only then flips each example's
-  `review_status` to `"reviewed"`, and writes `data/dataset_meta.json`
-  with a `dataset_version`.
-- A real deployment would replace this generator's output with an actual
-  human-reviewed set of real filings — this project exists to demonstrate
-  the *evaluation methodology*, not to provide real legal data. See
-  `data/README.md` for the full schema and versioning rules.
+| | `data/synthetic/` | `data/real_world/` |
+|---|---|---|
+| Purpose | deterministic regression testing (the CI gate uses it) | generalization smoke-check |
+| Content | 158 fictional legal-style documents | 12 verbatim public-domain excerpts (8 U.S. opinions, 4 federal rules/statutes) |
+| Queries | 100 (20 per category) | 19 (hand-written) |
+| Labels | correct by construction (template clusters) | hand-labeled |
+| Version | `1.1.0` | `1.0.0` |
 
-## Experiments
+- **Synthetic:** `scripts/build_dataset.py` (seeded, `SEED=42`) builds one "cluster" per legal doctrine
+  (an opinion, and optionally a statute, filing and memo) and derives each query from the same cluster as
+  its target passage. `scripts/validate_dataset.py` is a programmatic review (ids exist, no duplicate
+  queries, category balance, minimum length) that sets `review_status` and writes `dataset_meta.json`
+  (`dataset_version`, `generator_version`, `seed`, `document_count`, `query_count`, `categories`, …). This
+  stands in for human review; a real deployment needs real human review of real filings.
+- **Real-world:** U.S. judicial opinions and federal rules/statutes are not subject to copyright. Sources
+  and citations are listed in [`data/real_world/README.md`](data/real_world/README.md). Excerpts were
+  fetched once and checked in, so no network access is needed. They came through a summarizing fetch tool
+  and were **not** proofread character-by-character against official reporters.
+- **Versioning:** never edit examples silently; bump `dataset_version` and log why (see each dataset's
+  README). Every run records the dataset version, and the regression gate refuses to compare runs from
+  different versions.
+- **Do not read synthetic absolute metrics as real legal-retrieval performance.**
 
-Configurations are defined in one place, `src/retrieval/configs.py`:
+## 5. Retrieval configurations
 
-| Config | Chunk size | Method | Reranker | Candidate pool |
+Experiments are YAML files in [`experiments/`](experiments/), the single source of truth (loaded by
+`src/retrieval/configs.py`):
+
+```yaml
+name: hybrid
+retrieval: {dense: true, bm25: true, fusion: rrf}
+chunking: {size: 300, overlap: 50}
+reranker: {enabled: false, model: null, top_n: 20}
+candidate_pool: null
+```
+
+| Config | Chunk size / overlap | Method | Reranker | Candidate pool |
 |---|---|---|---|---|
-| `baseline` | 300 chars | dense (MiniLM embeddings) | off | full |
-| `chunk_change` | 100 chars | dense | off | full |
-| `hybrid` | 300 chars | dense + BM25 (Reciprocal Rank Fusion) | off | full |
-| `reranker` | 300 chars | dense | cross-encoder reranks top 20 | full |
-| `broken` (deliberately bad) | 40 chars | dense | off | clamped to 3 chunks |
+| `baseline` | 300 / 50 | dense (MiniLM) | off | full |
+| `chunk_change` | 100 / 20 | dense | off | full |
+| `hybrid` | 300 / 50 | dense + BM25, Reciprocal Rank Fusion | off | full |
+| `reranker` | 300 / 50 | dense | cross-encoder over top 20 chunks | full |
+| `broken` | 40 / 0 | dense | off | **3 chunks** (deliberately bad) |
 
-`broken` is not a strawman — it's a real configuration, evaluated the same
-way as the others, that happens to search only 3 chunks out of the whole
-index. Its purpose is to prove the regression gate actually catches a bad
-change (see below).
+Embedding model `sentence-transformers/all-MiniLM-L6-v2`; reranker `cross-encoder/ms-marco-MiniLM-L-6-v2`.
+Retrieved chunks are deduplicated to their parent passage before scoring, because labels are document-level.
 
-## Metrics
+## 6. Metrics
 
-- **Recall@K** — of the passages that are actually relevant to a query,
-  what fraction appear anywhere in the top K retrieved? Measures coverage.
-- **MRR** (Mean Reciprocal Rank) — the reciprocal of the rank of the first
-  relevant result, averaged over queries. Measures how early the right
-  answer shows up.
-- **nDCG@10** — a rank-sensitive version of Recall@10: hits near the top
-  count more than hits near the bottom.
+- **Recall@K** (5 and 10): the fraction of a query's relevant passages found in the top K.
+- **MRR:** mean of 1/rank of the first relevant passage.
+- **nDCG@10:** rank-sensitive gain with binary relevance (relevant = 1).
 
-Recall@10 is what the CI gate watches, since it's the metric most directly
-tied to "did the system have any chance of answering this correctly at
-all" — MRR/nDCG matter for user experience but a system can't compose a
-good answer around a document it never retrieved.
+Everything is reported overall and per category (`precedent`, `statute`, `procedural`, `factual`,
+`multi_hop`). Generation metrics (heuristic unless noted) are kept separate:
 
-## Running Locally
+| Metric | Default (free, deterministic) | With `USE_RAGAS=true` |
+|---|---|---|
+| Faithfulness | answer vocabulary found in context | Ragas LLM judge |
+| Answer relevance | query vocabulary covered by answer | Ragas LLM judge |
+| Context relevance | query vocabulary covered by context | Ragas LLM judge |
 
-```bash
-git clone <this-repo>
-cd groundtruth
+The Ragas path is implemented but has **not** been run here (no API key). `pytest` and CI never call an LLM.
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+## 7. Statistical methodology
 
-# Build and validate the dataset (already committed, but reproducible):
-python scripts/build_dataset.py
-python scripts/validate_dataset.py
-
-pytest
-```
-
-Then:
+Configurations are scored on the same queries, so comparisons are **paired**. `src/evaluation/statistics.py`
+resamples queries with replacement (10,000 resamples, seed 42), recomputes the mean per-query difference
+each time, and takes the 2.5th/97.5th percentiles as a 95% interval. A difference counts only if the
+interval excludes 0; otherwise it is reported as "inconclusive", which means the data cannot separate the
+configs, not that they are equal.
 
 ```bash
-python -m src.evaluation.evaluate
+python -m src.evaluation.compare --baseline baseline --candidate hybrid
 ```
 
-Then:
+## 8. Error analysis
 
-```bash
-python -m src.evaluation.error_analysis
-```
+`python -m src.evaluation.error_analysis` labels every imperfectly retrieved query (Recall@5 < 1,
+Recall@10 < 1, or first relevant passage not ranked first) with exactly one of:
 
-Optional: to enable Ragas-based generation evaluation instead of the
-default lexical heuristic, `pip install -e ".[ragas]"`, set `USE_RAGAS=true`
-and provide `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (see `.env.example`).
-Not required for anything else in this repo, including CI.
+`chunk_boundary`, `lexical_mismatch`, `semantic_mismatch`, `distractor_confusion`, `multi_hop_failure`,
+`candidate_pool_limitation`, `ranking_failure`, `generic_term_collision`, `unknown`.
 
-## CI Regression Gate
+Each label comes from computed signals (query/document term overlap, corpus document frequency of query
+terms, chunk counts, BM25 rank, candidate-pool size), and each record shows the evidence numbers. Rules are
+applied in a fixed order (see `classify_failure`); `unknown` is a genuine fallback. The labels are
+heuristics: they describe which signal fired, not a proven root cause. Output includes the per-query
+record (ID, category, difficulty, Recall@5/10, MRR, relevant and retrieved IDs, relevant ranks, diagnosis,
+evidence), an aggregate table, and `--compare-with <config>` for a side-by-side distribution.
 
-`src/evaluation/regression_gate.py` compares a new Recall@10 value against
-the committed, approved baseline in `reports/baseline_metrics.json`:
+## 9. CI regression gate
 
-```
+```text
 drop = new_recall10 - baseline_recall10
-PASS if drop >= -threshold   (default threshold: 0.01, i.e. 1 percentage point)
-FAIL otherwise
+PASS if drop >= -threshold        # REGRESSION_THRESHOLD, default 0.01
 ```
 
-`tests/test_regression_gate.py` has an integration test that evaluates
-whichever config the `EVAL_CONFIG` environment variable names (default:
-`baseline`) against that approved baseline. In normal CI runs this is
-green. To reproduce a real, demonstrated failure:
+- The approved baseline is `reports/baseline_metrics.json` (Recall@10 `0.985` on synthetic `1.1.0`). It is
+  written only by `python -m src.evaluation.evaluate --approve-baseline`, after human review.
+- The gate raises clear errors for a missing baseline, an invalid threshold (non-numeric, ≤ 0, NaN/inf), and
+  a **dataset-version mismatch** (it will not compare runs from different dataset versions).
+- Do not raise the threshold or re-approve the baseline to make a red build green.
+
+Reproduce a genuine failure with the deliberately bad configuration:
 
 ```bash
 EVAL_CONFIG=broken pytest tests/test_regression_gate.py
 ```
 
-Expected result: **FAIL**, with output like:
+Expected result: **FAIL** (1 failed, the rest pass), reason: Recall@10 dropped by far more than 1 percentage point:
 
-```
+```text
 Baseline Recall@10: 0.9850
 New Recall@10:      0.0150
 Drop:               -0.9700
@@ -187,132 +196,162 @@ Allowed threshold:  0.0100
 CI RESULT: FAIL
 ```
 
-`reports/baseline_metrics.json` is only ever updated by
-`python -m src.evaluation.evaluate --approve-baseline`, and only after a
-human reviews the new numbers — never automatically, and never to make a
-failing check pass. The threshold is configurable via `REGRESSION_THRESHOLD`
-but defaults to `0.01` and should not be loosened to hide a regression.
+## 10. RAG demonstration
 
-`.github/workflows/evaluation.yml` runs: install deps → `pytest` (unit
-tests + regression gate, must pass) → full evaluation run → upload the
-comparison report as a build artifact. No external LLM calls happen in CI.
+```bash
+pip install -e ".[api]"
+uvicorn src.api.app:app --reload        # open http://localhost:8000
+```
 
-## Example Results
+- `POST /retrieve` → ranked passages with scores. `POST /ask` → `{"retrieval": …, "generation": …}`.
+- The two blocks are separate on purpose and there is **no combined score**. `generation.context_passage_ids`
+  shows exactly what the answer could use; if the question is a golden query, `retrieval.golden_check`
+  reports whether the relevant passages were retrieved and at which ranks.
+- Answers are extractive by default (no key). `GENERATION_BACKEND=llm` with `ANTHROPIC_API_KEY` uses an
+  Anthropic model (needs `pip install anthropic`); that path is **untested against the live API**.
+- Try it on `real_world` with *"What warnings must be given to a suspect before custodial questioning?"*:
+  Miranda is retrieved at rank 1, but with a 2-source extractive answer the second citation is an
+  unrelated procedure rule, showing how a weak second source leaks into the answer.
 
-These are real numbers from this repository's committed dataset (see
-`reports/comparison.md` / `reports/comparison.csv` for the full,
-regeneratable output):
+## 11. Example results
 
-| Configuration | Chunk size | Method | Reranker | Recall@5 | Recall@10 | MRR | nDCG@10 | Δ Recall@10 |
-|---|---|---|---|---|---|---|---|---|
-| baseline | 300 | dense | off | 0.975 | 0.985 | 0.823 | 0.859 | — |
-| chunk_change | 100 | dense | off | 0.985 | 0.990 | 0.779 | 0.822 | +0.005 |
-| hybrid | 300 | dense+BM25 | off | 0.965 | 1.000 | 0.866 | 0.896 | +0.015 |
-| reranker | 300 | dense | on | 0.985 | 0.995 | 0.909 | 0.928 | +0.010 |
-| broken | 40 | dense | off | 0.015 | 0.015 | 0.020 | 0.016 | **-0.970** |
+All numbers below come from actual runs of this repository (`reports/comparison.md`,
+`reports/dashboard.html`, `reports/real_world/`).
 
-Two things worth noticing, honestly:
+**Synthetic 1.1.0 (100 queries)**
 
-1. **Recall@10 is close to ceiling for every real configuration.** The
-   synthetic golden set is easy enough at K=10 that this metric alone
-   barely distinguishes baseline / chunk_change / hybrid / reranker — a
-   real motivator for also tracking MRR and nDCG, which do separate them
-   clearly (reranker's MRR of 0.909 vs. chunk_change's 0.779 shows a real
-   ranking-quality difference that Recall@10 hides).
-2. **`chunk_change` (smaller chunks) makes MRR and nDCG worse**, not
-   better — fragmenting documents into 100-character windows scatters the
-   identifying terms across chunks, so the right document is often found,
-   just ranked lower. This is a real regression in ranking quality that
-   the harness correctly surfaces, even though Recall@10 alone would call
-   it an improvement.
+| Config | Recall@5 | Recall@10 | MRR | nDCG@10 | Δ Recall@10 |
+|---|---|---|---|---|---|
+| baseline | 0.975 | 0.985 | 0.823 | 0.859 | — |
+| chunk_change | 0.985 | 0.990 | 0.779 | 0.822 | +0.005 |
+| hybrid | 0.965 | 1.000 | 0.866 | 0.896 | +0.015 |
+| reranker | 0.985 | 0.995 | 0.909 | 0.928 | +0.010 |
+| broken | 0.015 | 0.015 | 0.020 | 0.016 | −0.970 |
 
-## Error Analysis
+**Paired bootstrap vs. baseline (95% CI)**
 
-Real output from `python -m src.evaluation.error_analysis` against the
-`baseline` configuration (full report in `reports/error_analysis.md`):
+| Candidate | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| chunk_change | +0.005 [−0.015, +0.030] inconclusive | −0.044 [−0.105, +0.018] inconclusive | −0.037 [−0.084, +0.011] inconclusive |
+| hybrid | +0.015 [+0.000, +0.040] inconclusive | +0.043 [−0.000, +0.089] inconclusive | +0.037 [+0.004, +0.071] **improvement** |
+| reranker | +0.010 [+0.000, +0.030] inconclusive | +0.086 [+0.034, +0.140] **improvement** | +0.069 [+0.030, +0.109] **improvement** |
+| broken | −0.970 [−0.995, −0.935] **regression** | −0.803 [−0.860, −0.742] **regression** | −0.843 [−0.888, −0.794] **regression** |
 
-1. **q003** (factual, easy) — Recall@10: 0.00. The memo answering "what
-   key facts were identified concerning consideration" in the Duarte
-   Matter was never retrieved. Diagnosis: chunk boundary problem — the
-   source memo was split into 6 chunks, and the identifying terms
-   (`consideration`, `duarte`) may not be concentrated in any single
-   highest-scoring chunk.
-2. **q024** (multi_hop, hard) — Recall@10: 0.50. Only one of the two
-   required passages (an opinion and a statute on `promissory estoppel`)
-   was retrieved — the statute ranked #2, but the opinion was missed
-   entirely, a genuine multi-hop failure.
-3. **q089** (procedural, hard) — Recall@5: 0.00, Recall@10: 1.00. The
-   query names only a generic motion type ("motion to quash subpoena")
-   shared by several unrelated filings in the corpus; the correct filing
-   was retrieved but only at rank 6, outranked by five other filings of
-   the same motion type.
-4. **q082** (procedural, hard) — MRR: 0.20. Same pattern as q089: several
-   "motion to compel arbitration" filings compete, and the correct one
-   ranks 5th.
-5. **q029** (procedural, hard) — MRR: 0.25. Same pattern again, ranking
-   4th among motion-type look-alikes.
+Only the reranker's ranking gains (MRR, nDCG) and the `broken` collapse are clearly separated from noise;
+none of the Recall@10 differences among the four real configs is. Recall@10 is near ceiling on this dataset.
 
-The pattern across 3 of the 5 worst queries — procedural filings that
-share a generic motion type — is itself a useful finding: it shows the
-retriever leans on motion-type wording more than on the doctrine-specific
-content that actually distinguishes one filing from another, which a real
-system would want to fix (e.g. by weighting the reranker more heavily for
-this document type).
+**Baseline failure types (30 of 100 queries imperfect)**
 
-## Design Decisions
+| Failure type | Count | % |
+|---|---|---|
+| semantic_mismatch | 12 | 40% |
+| chunk_boundary | 8 | 27% |
+| ranking_failure | 6 | 20% |
+| distractor_confusion | 2 | 7% |
+| multi_hop_failure | 1 | 3% |
+| generic_term_collision | 1 | 3% |
 
-- **Real embeddings, not a TF-IDF stand-in.** Dense retrieval uses
-  `sentence-transformers/all-MiniLM-L6-v2` so "dense vs. hybrid" is a real
-  architectural difference, not two flavors of the same lexical method.
-- **Chunking happens on long-form documents.** Each synthetic document is
-  300-600 words so chunk-size experiments produce genuinely different
-  numbers of chunks, and chunk-boundary failures in error analysis are
-  real, not simulated.
-- **Golden relevance is document-level, not chunk-level.** Retrieved
-  chunks are deduplicated to their parent `passage_id` before scoring,
-  since that's the granularity the golden set was labeled at.
-- **Hybrid retrieval uses Reciprocal Rank Fusion**, not a tuned weighted
-  sum, to keep the combination deterministic and free of an extra
-  hyperparameter to justify.
-- **Generation evaluation defaults to a free lexical-overlap heuristic**
-  (token overlap between answer/context and answer/query) so the full
-  pipeline runs with zero API cost and zero network dependency beyond the
-  embedding/reranker models. Ragas + an LLM judge is available behind
-  `USE_RAGAS=true` for a more rigorous (but paid) alternative.
-- **The dataset is template-generated, not freely LLM-authored**, so every
-  relevance label is correct by construction and the whole corpus is
-  reproducible from a fixed seed.
+Notably, `chunk_change` (100-char chunks) shifts 29 of its 40 imperfect queries to `chunk_boundary`.
 
-## Limitations
+**Worst five baseline queries** (`reports/error_analysis.md`): q003 (factual, Recall@10 0.00,
+`chunk_boundary`), q024 (multi-hop, only 1 of 2 passages retrieved, `multi_hop_failure`), q089 (procedural,
+correct filing at rank 6, `ranking_failure`), q082 (procedural, rank 5, `semantic_mismatch`: BM25 alone
+ranks it 4th), q029 (procedural, rank 4, `ranking_failure`). In q089's top five, every result is a
+"Motion to Quash Subpoena" filing, a visible pattern, but the classifier's rules did not attribute it to
+term collision, so it is reported as the tool labeled it.
 
-- **Synthetic corpus.** No real case law, filings, or firm documents are
-  used or represented. Absolute metric values here say nothing about
-  performance on real legal text.
-- **Small dataset.** 100 queries and 158 documents is enough to exercise
-  the evaluation methodology, not enough for statistically rigorous
-  comparisons between close configurations.
-- **Ceiling effects at Recall@10.** As shown above, the golden set is
-  "easy" enough that Recall@10 saturates near 1.0 for most configurations;
-  a harder or larger dataset would show more differentiation.
-- **Retrieval implementation is intentionally lightweight** — no ANN
-  index, no production-grade hybrid weighting, no query rewriting. The
-  point of this project is the evaluation harness, not a competitive
-  search engine.
-- **Embedding/reranker model dependency.** Absolute numbers will shift if
-  `EMBEDDING_MODEL_NAME` / `RERANKER_MODEL_NAME` change; only relative
-  comparisons within a single evaluation run are meaningful.
-- **Generation evaluator dependency.** The default heuristic is a cheap
-  proxy, not a substitute for an LLM-judged faithfulness/relevance score;
-  treat its numbers as directional only.
+**Real-world (12 docs, 19 queries; smoke check, not a benchmark)**
 
-## Future Improvements
+| Config | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| baseline | 1.000 | 0.974 | 0.974 |
+| chunk_change | 1.000 | 0.877 | 0.911 |
+| hybrid | 1.000 | 0.974 | 0.976 |
+| reranker | 1.000 | 1.000 | 1.000 |
+| broken | 0.053 | 0.053 | 0.053 |
 
-- A larger, human-reviewed (not template-generated) golden dataset.
-- A more realistic and larger legal corpus, ideally with real
-  distractor density instead of programmatically-clustered documents.
-- A stronger, tuned reranker and a proper ANN vector index.
-- Statistical significance testing between configurations (the dataset is
-  currently too small to support this rigorously).
-- Experiment tracking across runs (e.g. a lightweight run log) instead of
-  a single overwritten comparison report.
-- Distributed / parallelized evaluation for larger datasets.
+With only 19 queries and short documents, the working configs are effectively tied at ceiling.
+
+## 12. Reproducibility
+
+- Every experiment is a YAML file; `python -m src.evaluation.run --config experiments/hybrid.yaml
+  [--dataset synthetic|real_world]` writes `runs/<timestamp>_<name>/` with `config.yaml`, `metrics.json`
+  (dataset version, models, chunking, method, candidate pool, timestamp, metrics), `query_results.json`,
+  `error_analysis.md`, `report.md`. Runs are never overwritten; `runs/` is git-ignored.
+- Dataset generation and bootstrap sampling are seeded. Re-running the same experiment on the same
+  dataset on the same machine gives identical metrics (tested). Across hardware, tiny floating-point
+  differences in embeddings are possible; the approved numbers were produced on a Mac (Apple GPU), and CI
+  runs on Linux CPU. The CI reproduction test uses a 0.005 tolerance for that reason.
+- `reports/` holds the latest committed comparison, dashboard and baseline; `runs/` is local history.
+
+## 13. Limitations
+
+- The synthetic corpus is fictional and template-generated; the golden set is small (100) and Recall@10
+  is near ceiling, so many configuration differences are statistically inconclusive.
+- The real-world benchmark has 12 short excerpts and 19 queries written with knowledge of the text; scores
+  are optimistic and not statistically meaningful. Excerpts were not proofread against official sources.
+- Retrieval infrastructure is deliberately lightweight (no ANN index, no tuned fusion weights).
+- Absolute numbers depend on the embedding/reranker models.
+- Heuristic generation metrics are lexical proxies. The Ragas path and the LLM answer backend have not
+  been run against a live API here.
+- Error-analysis labels are rule-based heuristics.
+- Docker: the image built successfully, but running the tests inside the container was **not verified**
+  (the host disk filled up during the run).
+
+## 14. Future work
+
+A larger human-reviewed golden set and real firm-style corpus; a larger real-world benchmark;
+a stronger reranker and ANN index; experiment tracking beyond local `runs/`; multiple-comparison handling
+for many configs; distributed evaluation.
+
+## 15. How to run locally
+
+```bash
+git clone git@github.com:Aakif9866/Groundtruth.git && cd Groundtruth
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,api]"
+
+pytest                                            # all tests
+pytest -m unit                                    # fast, no model downloads
+python -m src.evaluation.evaluate                 # all configs -> reports/ (+ dashboard.html)
+python -m src.evaluation.evaluate --dataset real_world
+python -m src.evaluation.run --config experiments/hybrid.yaml --dataset synthetic
+python -m src.evaluation.compare --baseline baseline --candidate hybrid
+python -m src.evaluation.error_analysis --config baseline --compare-with hybrid
+uvicorn src.api.app:app --reload                  # RAG demo
+```
+
+First use downloads two small Hugging Face models. Optional: `pip install -e ".[ragas]"` plus
+`USE_RAGAS=true` and an API key (see `.env.example`).
+
+**Docker** (`Dockerfile`, `docker-compose.yml`):
+
+```bash
+docker compose up                                    # demo on http://localhost:8000
+docker compose run --rm app pytest                   # tests
+docker compose run --rm app python -m src.evaluation.evaluate
+docker compose run --rm -e ANTHROPIC_API_KEY=... -e GENERATION_BACKEND=llm app   # optional LLM answers
+```
+
+## 16. How to run CI
+
+`.github/workflows/evaluation.yml` runs on push/PR to `main`: install CPU torch and the package → unit
+tests → integration tests → evaluation tests including the regression gate → full evaluation → upload
+`comparison.md`, `comparison.csv`, `dashboard.html`. It makes no LLM calls. Its first run on GitHub's
+Linux runners has not been observed yet.
+
+## 17. Project structure
+
+```text
+experiments/          YAML experiment configs (baseline, chunk_change, hybrid, reranker, broken)
+data/synthetic/       fictional corpus + golden set + dataset_meta.json + README
+data/real_world/      public-domain excerpts + golden set + sources README
+scripts/              build_dataset.py, validate_dataset.py, build_real_world.py
+src/retrieval/        configs.py (YAML loader), retriever.py
+src/evaluation/       metrics, evaluate, run, compare, statistics, error_analysis, report, regression_gate
+src/generation/       generate.py (kept separate from retrieval metrics)
+src/api/              FastAPI demo + static page
+tests/                unit/, integration/, evaluation/, test_regression_gate.py (the gate entry point)
+reports/              baseline_metrics.json (approved), comparison.*, dashboard.html, error_analysis.md
+runs/                 local timestamped experiment runs (git-ignored)
+```
