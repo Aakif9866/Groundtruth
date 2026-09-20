@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Groundtruth Evaluation Dashboard</title><style>
+:root{--bg:#fff;--fg:#1c2530;--muted:#5d6b7a;--line:#dde3ea;--card:#f6f8fa}
+@media(prefers-color-scheme:dark){:root{--bg:#12171d;--fg:#e6ebf0;--muted:#9aa7b4;--line:#2a343f;--card:#1a212a}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px}h3{font-size:15px;margin:16px 0 6px}
+.sub{color:var(--muted);margin:0 0 16px}
+.tbl{border-collapse:collapse;width:100%;font-size:13px;background:var(--card)}
+.tbl th,.tbl td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.scroll{overflow-x:auto}
+.chart{width:100%;height:auto}.grid{stroke:var(--line)}.tick{fill:var(--muted);font-size:11px}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:4px}
+.key i{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:2px}
+.fail{font-size:13px}.frow{display:flex;align-items:center;gap:8px;margin:2px 0}
+.fname{width:190px}.fbar{flex:1;background:var(--card);height:10px;border-radius:3px;overflow:hidden}
+.fbar b{display:block;height:100%;background:#c0563b}.fnum{width:80px;text-align:right;color:var(--muted)}
+</style></head><body><main>
+<h1>Groundtruth evaluation dashboard</h1>
+<p class="sub">Dataset <b>real_world</b> v1.0.0 &middot; 19 queries &middot; deltas vs. <b>baseline</b></p>
+<h2>Overall metrics</h2><svg viewBox="0 0 760 300" role="img" aria-label="Metrics by configuration" class="chart"><line x1="40" x2="750" y1="250.0" y2="250.0" class="grid"/><text x="34" y="254.0" text-anchor="end" class="tick">0.00</text><line x1="40" x2="750" y1="192.5" y2="192.5" class="grid"/><text x="34" y="196.5" text-anchor="end" class="tick">0.25</text><line x1="40" x2="750" y1="135.0" y2="135.0" class="grid"/><text x="34" y="139.0" text-anchor="end" class="tick">0.50</text><line x1="40" x2="750" y1="77.5" y2="77.5" class="grid"/><text x="34" y="81.5" text-anchor="end" class="tick">0.75</text><line x1="40" x2="750" y1="20.0" y2="20.0" class="grid"/><text x="34" y="24.0" text-anchor="end" class="tick">1.00</text><rect x="57.8" y="20.0" width="31.9" height="230.0" fill="#2a6f97"><title>baseline recall@10: 1.000</title></rect><rect x="93.2" y="26.0" width="31.9" height="224.0" fill="#e07a1f"><title>baseline mrr: 0.974</title></rect><rect x="128.8" y="26.0" width="31.9" height="224.0" fill="#5b8c5a"><title>baseline ndcg@10: 0.974</title></rect><text x="111.0" y="268" text-anchor="middle" class="tick">baseline</text><rect x="199.8" y="20.0" width="31.9" height="230.0" fill="#2a6f97"><title>chunk_change recall@10: 1.000</title></rect><rect x="235.2" y="48.2" width="31.9" height="201.8" fill="#e07a1f"><title>chunk_change mrr: 0.877</title></rect><rect x="270.8" y="40.5" width="31.9" height="209.5" fill="#5b8c5a"><title>chunk_change ndcg@10: 0.911</title></rect><text x="253.0" y="268" text-anchor="middle" class="tick">chunk_change</text><rect x="341.8" y="20.0" width="31.9" height="230.0" fill="#2a6f97"><title>hybrid recall@10: 1.000</title></rect><rect x="377.2" y="26.0" width="31.9" height="224.0" fill="#e07a1f"><title>hybrid mrr: 0.974</title></rect><rect x="412.8" y="25.4" width="31.9" height="224.6" fill="#5b8c5a"><title>hybrid ndcg@10: 0.976</title></rect><text x="395.0" y="268" text-anchor="middle" class="tick">hybrid</text><rect x="483.8" y="20.0" width="31.9" height="230.0" fill="#2a6f97"><title>reranker recall@10: 1.000</title></rect><rect x="519.2" y="20.0" width="31.9" height="230.0" fill="#e07a1f"><title>reranker mrr: 1.000</title></rect><rect x="554.8" y="20.0" width="31.9" height="230.0" fill="#5b8c5a"><title>reranker ndcg@10: 1.000</title></rect><text x="537.0" y="268" text-anchor="middle" class="tick">reranker</text><rect x="625.8" y="237.9" width="31.9" height="12.1" fill="#2a6f97"><title>broken recall@10: 0.053</title></rect><rect x="661.2" y="237.9" width="31.9" height="12.1" fill="#e07a1f"><title>broken mrr: 0.053</title></rect><rect x="696.8" y="237.9" width="31.9" height="12.1" fill="#5b8c5a"><title>broken ndcg@10: 0.053</title></rect><text x="679.0" y="268" text-anchor="middle" class="tick">broken</text></svg><div class="legend"><span class="key"><i style="background:#2a6f97"></i>recall@10</span><span class="key"><i style="background:#e07a1f"></i>mrr</span><span class="key"><i style="background:#5b8c5a"></i>ndcg@10</span></div>
+<div class="scroll"><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>configuration</th>
+      <th>chunk_size</th>
+      <th>retrieval_method</th>
+      <th>reranker</th>
+      <th>candidate_pool</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+      <th>delta_recall@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>baseline</td>
+      <td>300</td>
+      <td>dense</td>
+      <td>False</td>
+      <td>full</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>0.9737</td>
+      <td>0.9741</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>chunk_change</td>
+      <td>100</td>
+      <td>dense</td>
+      <td>False</td>
+      <td>full</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>0.8772</td>
+      <td>0.9108</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>hybrid</td>
+      <td>300</td>
+      <td>hybrid</td>
+      <td>False</td>
+      <td>full</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>0.9737</td>
+      <td>0.9764</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>reranker</td>
+      <td>300</td>
+      <td>dense</td>
+      <td>True</td>
+      <td>full</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>broken</td>
+      <td>40</td>
+      <td>dense</td>
+      <td>False</td>
+      <td>3</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+      <td>-0.9474</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>Configuration details</h2><div class="scroll"><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>configuration</th>
+      <th>chunk_size</th>
+      <th>chunk_overlap</th>
+      <th>retrieval_method</th>
+      <th>embedding_model</th>
+      <th>reranker</th>
+      <th>candidate_pool</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>baseline</td>
+      <td>300</td>
+      <td>50</td>
+      <td>dense</td>
+      <td>sentence-transformers/all-MiniLM-L6-v2</td>
+      <td>off</td>
+      <td>full</td>
+    </tr>
+    <tr>
+      <td>chunk_change</td>
+      <td>100</td>
+      <td>20</td>
+      <td>dense</td>
+      <td>sentence-transformers/all-MiniLM-L6-v2</td>
+      <td>off</td>
+      <td>full</td>
+    </tr>
+    <tr>
+      <td>hybrid</td>
+      <td>300</td>
+      <td>50</td>
+      <td>hybrid</td>
+      <td>sentence-transformers/all-MiniLM-L6-v2</td>
+      <td>off</td>
+      <td>full</td>
+    </tr>
+    <tr>
+      <td>reranker</td>
+      <td>300</td>
+      <td>50</td>
+      <td>dense</td>
+      <td>sentence-transformers/all-MiniLM-L6-v2</td>
+      <td>cross-encoder/ms-marco-MiniLM-L-6-v2</td>
+      <td>full</td>
+    </tr>
+    <tr>
+      <td>broken</td>
+      <td>40</td>
+      <td>0</td>
+      <td>dense</td>
+      <td>sentence-transformers/all-MiniLM-L6-v2</td>
+      <td>off</td>
+      <td>3</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>Statistical analysis (paired bootstrap, 95% CI)</h2>
+<p class="sub">A difference counts only if the interval excludes 0.</p><div class="scroll"><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>candidate</th>
+      <th>metric</th>
+      <th>delta</th>
+      <th>95% CI</th>
+      <th>reading</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>chunk_change</td>
+      <td>recall@10</td>
+      <td>+0.000</td>
+      <td>[+0.000, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>chunk_change</td>
+      <td>mrr</td>
+      <td>-0.096</td>
+      <td>[-0.211, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>chunk_change</td>
+      <td>ndcg@10</td>
+      <td>-0.063</td>
+      <td>[-0.137, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>hybrid</td>
+      <td>recall@10</td>
+      <td>+0.000</td>
+      <td>[+0.000, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>hybrid</td>
+      <td>mrr</td>
+      <td>+0.000</td>
+      <td>[+0.000, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>hybrid</td>
+      <td>ndcg@10</td>
+      <td>+0.002</td>
+      <td>[-0.013, +0.019]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>reranker</td>
+      <td>recall@10</td>
+      <td>+0.000</td>
+      <td>[+0.000, +0.000]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>reranker</td>
+      <td>mrr</td>
+      <td>+0.026</td>
+      <td>[+0.000, +0.079]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>reranker</td>
+      <td>ndcg@10</td>
+      <td>+0.026</td>
+      <td>[+0.000, +0.071]</td>
+      <td>inconclusive: CI includes 0</td>
+    </tr>
+    <tr>
+      <td>broken</td>
+      <td>recall@10</td>
+      <td>-0.947</td>
+      <td>[-1.000, -0.842]</td>
+      <td>regression: CI excludes 0</td>
+    </tr>
+    <tr>
+      <td>broken</td>
+      <td>mrr</td>
+      <td>-0.921</td>
+      <td>[-1.000, -0.789]</td>
+      <td>regression: CI excludes 0</td>
+    </tr>
+    <tr>
+      <td>broken</td>
+      <td>ndcg@10</td>
+      <td>-0.921</td>
+      <td>[-1.000, -0.797]</td>
+      <td>regression: CI excludes 0</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>Failure types</h2><h3>baseline</h3><div class="fail"><div class="frow"><span class="fname">chunk_boundary</span><span class="fbar"><b style="width:100%"></b></span><span class="fnum">1 (100%)</span></div></div><h3>chunk_change</h3><div class="fail"><div class="frow"><span class="fname">semantic_mismatch</span><span class="fbar"><b style="width:25%"></b></span><span class="fnum">1 (25%)</span></div><div class="frow"><span class="fname">generic_term_collision</span><span class="fbar"><b style="width:25%"></b></span><span class="fnum">1 (25%)</span></div><div class="frow"><span class="fname">distractor_confusion</span><span class="fbar"><b style="width:25%"></b></span><span class="fnum">1 (25%)</span></div><div class="frow"><span class="fname">chunk_boundary</span><span class="fbar"><b style="width:25%"></b></span><span class="fnum">1 (25%)</span></div></div><h3>hybrid</h3><div class="fail"><div class="frow"><span class="fname">chunk_boundary</span><span class="fbar"><b style="width:100%"></b></span><span class="fnum">1 (100%)</span></div></div><h3>reranker</h3><p>No imperfect queries.</p><h3>broken</h3><div class="fail"><div class="frow"><span class="fname">candidate_pool_limitation</span><span class="fbar"><b style="width:100%"></b></span><span class="fnum">18 (100%)</span></div></div>
+<h2>Per-category breakdown</h2><h3>baseline</h3><div class='scroll'><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>category</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>overall</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.9737</td>
+      <td>0.9741</td>
+    </tr>
+    <tr>
+      <td>precedent</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.9375</td>
+      <td>0.9539</td>
+    </tr>
+    <tr>
+      <td>statute</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>procedural</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>factual</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>multi_hop</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>0.9591</td>
+    </tr>
+  </tbody>
+</table></div><h3>chunk_change</h3><div class='scroll'><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>category</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>overall</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.8772</td>
+      <td>0.9108</td>
+    </tr>
+    <tr>
+      <td>precedent</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.8750</td>
+      <td>0.9077</td>
+    </tr>
+    <tr>
+      <td>statute</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>procedural</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.6667</td>
+      <td>0.7500</td>
+    </tr>
+    <tr>
+      <td>factual</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>multi_hop</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.7778</td>
+      <td>0.8479</td>
+    </tr>
+  </tbody>
+</table></div><h3>hybrid</h3><div class='scroll'><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>category</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>overall</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.9737</td>
+      <td>0.9764</td>
+    </tr>
+    <tr>
+      <td>precedent</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.9375</td>
+      <td>0.9539</td>
+    </tr>
+    <tr>
+      <td>statute</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>procedural</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>factual</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>1.0000</td>
+    </tr>
+    <tr>
+      <td>multi_hop</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0000</td>
+      <td>0.9732</td>
+    </tr>
+  </tbody>
+</table></div><h3>reranker</h3><div class='scroll'><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>category</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>overall</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>precedent</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>statute</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>procedural</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>factual</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>multi_hop</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+    </tr>
+  </tbody>
+</table></div><h3>broken</h3><div class='scroll'><table class="dataframe tbl">
+  <thead>
+    <tr style="text-align: right;">
+      <th>category</th>
+      <th>recall@5</th>
+      <th>recall@10</th>
+      <th>mrr</th>
+      <th>ndcg@10</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>overall</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+      <td>0.0526</td>
+    </tr>
+    <tr>
+      <td>precedent</td>
+      <td>0.1250</td>
+      <td>0.1250</td>
+      <td>0.1250</td>
+      <td>0.1250</td>
+    </tr>
+    <tr>
+      <td>statute</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>procedural</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>factual</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+    </tr>
+    <tr>
+      <td>multi_hop</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+      <td>0.0000</td>
+    </tr>
+  </tbody>
+</table></div>
+</main></body></html>
