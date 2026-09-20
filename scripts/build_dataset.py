@@ -10,11 +10,11 @@ Usage:
     python scripts/build_dataset.py
 
 Produces:
-    data/corpus.jsonl        - synthetic long-form legal documents
-    data/golden_set.jsonl    - candidate query/relevance examples (review_status="pending")
+    data/synthetic/corpus.jsonl     - synthetic long-form legal documents
+    data/synthetic/golden_set.jsonl - candidate query/relevance examples (review_status="pending")
 
 Run scripts/validate_dataset.py afterwards to structurally validate the
-candidate set, mark examples "reviewed", and write data/dataset_meta.json.
+candidate set, mark examples "reviewed", and write data/synthetic/dataset_meta.json.
 """
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ import random
 from pathlib import Path
 
 SEED = 42
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+GENERATOR_VERSION = "1.1.0"  # bump when template/generation logic changes
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "synthetic"
 
 # ---------------------------------------------------------------------------
 # Name pools (all fictional)
@@ -441,8 +442,8 @@ def main():
         for ex in golden:
             f.write(json.dumps(ex) + "\n")
 
-    print(f"Wrote {len(corpus)} corpus documents to data/corpus.jsonl")
-    print(f"Wrote {len(golden)} candidate golden examples to data/golden_set.jsonl")
+    print(f"Wrote {len(corpus)} corpus documents to data/synthetic/corpus.jsonl")
+    print(f"Wrote {len(golden)} candidate golden examples to data/synthetic/golden_set.jsonl")
     print(f"Category counts: {counts}")
     print("Next: run `python scripts/validate_dataset.py` to review and version the dataset.")
 

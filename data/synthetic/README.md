@@ -1,4 +1,9 @@
-# Data
+# Synthetic Dataset
+
+This is one of two datasets the harness supports (see `../real_world/README.md`
+for the other). It is used for deterministic CI regression testing — the
+approved baseline in `reports/baseline_metrics.json` is computed against
+this dataset only.
 
 **This is a synthetic dataset.** `corpus.jsonl` is not composed of real
 law-firm documents, filings, or opinions — it is a generated, fictional
@@ -39,14 +44,24 @@ automated structural check.
 ## Versioning rules
 
 - The dataset is versioned (`dataset_version` in `dataset_meta.json`),
-  currently `1.0.0`.
+  currently `1.1.0`. `dataset_meta.json` also records `generator_version`
+  (the version of `build_dataset.py`'s template logic) and `seed`, so any
+  future content change is distinguishable from a metadata-only change.
 - **Never silently edit an existing example's `query`, `relevant_passage_ids`,
   `category`, or the referenced corpus document text.** If an example must
   change, bump `dataset_version` and record why in this file's changelog
-  below (add one when the first change happens).
+  below.
 - Never modify the dataset merely to make a retrieval experiment pass.
+- The CI regression gate refuses to compare two runs whose `dataset_version`
+  differs (see `src/evaluation/regression_gate.py`), so a dataset content
+  change cannot silently invalidate the approved baseline.
 
 ## Changelog
 
+- `1.1.0` — metadata schema change only (added `generator_version`, `seed`;
+  renamed `num_corpus_documents`/`num_golden_examples` to
+  `document_count`/`query_count`/`categories` for consistency with the new
+  `data/real_world/` dataset). Corpus and golden set **content** is
+  byte-identical to `1.0.0` — no queries, labels, or documents changed.
 - `1.0.0` — initial synthetic corpus (158 documents) and golden set (100
   queries, 20 per category).

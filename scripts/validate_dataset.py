@@ -20,8 +20,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DATASET_VERSION = "1.0.0"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "synthetic"
+DATASET_VERSION = "1.1.0"
+GENERATOR_VERSION = "1.1.0"
+SEED = 42
 
 
 def load_jsonl(path: Path):
@@ -86,15 +88,17 @@ def main():
 
     meta = {
         "dataset_version": DATASET_VERSION,
+        "generator_version": GENERATOR_VERSION,
+        "seed": SEED,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "description": (
             "Synthetic legal-style corpus and golden evaluation set for retrieval "
-            "evaluation engineering. Not real law-firm documents; see data/README.md."
+            "evaluation engineering. Not real law-firm documents; see README.md in this directory."
         ),
         "review_status": "reviewed",
-        "num_corpus_documents": len(corpus),
-        "num_golden_examples": len(golden),
-        "category_counts": dict(category_counts),
+        "document_count": len(corpus),
+        "query_count": len(golden),
+        "categories": dict(category_counts),
         "difficulty_counts": dict(difficulty_counts),
         "doc_type_counts": dict(doc_type_counts),
     }
@@ -103,7 +107,7 @@ def main():
 
     print(f"Validation passed: {len(golden)} examples reviewed, dataset_version={DATASET_VERSION}")
     print(f"Category counts: {dict(category_counts)}")
-    print("Wrote data/dataset_meta.json")
+    print("Wrote data/synthetic/dataset_meta.json")
 
 
 if __name__ == "__main__":
