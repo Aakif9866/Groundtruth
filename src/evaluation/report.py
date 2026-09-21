@@ -6,6 +6,7 @@ no JavaScript, no CDN) so it opens offline and diffs cleanly.
 from __future__ import annotations
 
 import html
+import json
 from pathlib import Path
 from typing import Any
 
@@ -180,9 +181,33 @@ def render_dashboard_html(results: dict[str, dict], dataset: str, dataset_versio
 """
 
 
+def build_summary(results: dict[str, dict], dataset: str, dataset_version: str, n_queries: int,
+                  failures: dict[str, list], stats: dict[str, dict[str, BootstrapResult]]) -> dict[str, Any]:
+    """Machine-readable summary (used by the web UI): metrics, config details, statistics, failure types."""
+    details = config_details(results).set_index("configuration").to_dict("index")
+    return {
+        "dataset": dataset,
+        "dataset_version": dataset_version,
+        "query_count": n_queries,
+        "baseline": BASELINE_CONFIG_NAME,
+        "configs": {
+            name: {"details": details[name], "metrics": res["metrics"]} for name, res in results.items()
+        },
+        "stats": {
+            cand: {m: {"delta": r.delta, "ci_low": r.ci_low, "ci_high": r.ci_high, "ci_level": r.ci_level,
+                       "verdict": r.verdict} for m, r in per_metric.items()}
+            for cand, per_metric in stats.items()
+        },
+        "failures": {
+            name: [{"type": t, "count": n, "percent": round(pct, 1)} for t, n, pct in rows]
+            for name, rows in failures.items()
+        },
+    }
+
+
 def write_comparison_reports(results: dict[str, dict], corpus: list[dict], golden: list[dict], dataset: str,
                              dataset_version: str, out_dir: Path) -> None:
-    """Write comparison.md, comparison.csv and dashboard.html into ``out_dir``."""
+    """Write comparison.md, comparison.csv, summary.json and dashboard.html into ``out_dir``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     failures = failure_summaries(results, corpus, golden)
     stats = stats_versus_baseline(results)
@@ -193,6 +218,8 @@ def write_comparison_reports(results: dict[str, dict], corpus: list[dict], golde
         out_dir / "comparison.csv", index=False)
     (out_dir / "comparison.md").write_text(
         render_comparison_markdown(results, dataset, dataset_version, len(golden), failures, stats))
+    (out_dir / "summary.json").write_text(json.dumps(
+        build_summary(results, dataset, dataset_version, len(golden), failures, stats), indent=2, default=str))
     (out_dir / "dashboard.html").write_text(
         render_dashboard_html(results, dataset, dataset_version, len(golden), failures, stats))
 

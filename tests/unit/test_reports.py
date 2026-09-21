@@ -50,3 +50,16 @@ def test_run_report_includes_config_and_metrics():
             "query_count": 19, "config": build()[0]["hybrid"]["config"], "metrics": build()[0]["hybrid"]["metrics"]}
     md = render_run_report(meta, [("ranking_failure", 1, 100.0)])
     assert "real_world" in md and "1.000" in md and "emb-model" in md and "ranking_failure" in md
+
+
+def test_summary_payload_is_json_serializable_and_complete():
+    import json
+    from src.evaluation.report import build_summary
+    results, failures, stats = build()
+    s = build_summary(results, "synthetic", "1.1.0", 10, failures, stats)
+    json.dumps(s)
+    assert s["baseline"] == "baseline" and s["query_count"] == 10
+    assert s["configs"]["hybrid"]["details"]["retrieval_method"] == "hybrid"
+    assert s["configs"]["baseline"]["metrics"]["overall"]["recall@10"] == 0.9
+    assert s["stats"]["hybrid"]["recall@10"]["verdict"].startswith("improvement")
+    assert s["failures"]["baseline"][0] == {"type": "ranking_failure", "count": 3, "percent": 60.0}

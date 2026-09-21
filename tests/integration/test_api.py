@@ -81,4 +81,39 @@ def test_invalid_requests_are_rejected(body):
 
 def test_static_demo_page_is_served():
     r = client.get("/")
-    assert r.status_code == 200 and "Groundtruth RAG demo" in r.text
+    assert r.status_code == 200 and "<title>Groundtruth</title>" in r.text
+    for asset in ("js/main.js", "js/api.js", "css/tokens.css", "css/views.css"):
+        assert client.get(f"/{asset}").status_code == 200, asset
+
+
+def test_evaluation_endpoint_returns_summary_and_gate_verdicts():
+    body = client.get("/api/evaluation", params={"dataset": "synthetic"}).json()
+    summary, gate = body["summary"], body["gate"]
+    assert summary["dataset"] == "synthetic" and summary["baseline"] == "baseline"
+    assert {"baseline", "hybrid", "reranker", "broken"} <= set(summary["configs"])
+    assert summary["configs"]["baseline"]["metrics"]["overall"]["recall@10"] == pytest.approx(0.985)
+    assert set(summary["stats"]["hybrid"]) == {"recall@10", "mrr", "ndcg@10"}
+    assert gate["results"]["baseline"]["passed"] is True
+    assert gate["results"]["broken"]["passed"] is False and gate["results"]["broken"]["drop"] < -0.5
+
+
+def test_evaluation_endpoint_real_world_is_not_gated():
+    body = client.get("/api/evaluation", params={"dataset": "real_world"}).json()
+    assert body["gate"] is None and body["summary"]["query_count"] == 19
+
+
+def test_evaluation_and_examples_reject_unknown_dataset():
+    assert client.get("/api/evaluation", params={"dataset": "nope"}).status_code == 422
+    assert client.get("/api/examples", params={"dataset": "nope"}).status_code == 422
+
+
+def test_examples_cover_categories_first_and_respect_limit():
+    body = client.get("/api/examples", params={"dataset": "real_world", "limit": 5}).json()
+    assert len(body["examples"]) == 5
+    assert len({e["category"] for e in body["examples"]}) == 5
+    assert all(e["query"] for e in body["examples"])
+
+
+def test_results_include_full_passage_text():
+    r = post("/retrieve", query=GOLDEN_QUERY, top_k=1).json()["retrieval"]["results"][0]
+    assert len(r["text"]) >= len(r["snippet"]) and r["text"].startswith(r["snippet"][:40])

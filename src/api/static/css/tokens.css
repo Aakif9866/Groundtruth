@@ -1,0 +1,100 @@
+/* Design tokens. Everything else references these; change a value here, not in components. */
+:root {
+  color-scheme: light dark;
+
+  /* surfaces */
+  --bg: #f5f3ec;
+  --surface: #fdfcf8;
+  --surface-2: #eeebe1;
+  --sunken: #e8e4d8;
+
+  /* text */
+  --ink: #1c1b17;
+  --ink-2: #4f4c43;
+  --ink-3: #78746a;
+
+  /* lines */
+  --line: #ded9cc;
+  --line-strong: #c6c0af;
+
+  /* accent: retrieval / primary actions */
+  --accent: #1e5b4b;
+  --accent-hover: #174a3d;
+  --accent-ink: #fbfaf5;
+  --accent-soft: #e0ece6;
+
+  /* generation side of the pipeline (used sparingly, only to tell it apart from retrieval) */
+  --gen: #8a5a10;
+  --gen-soft: #f2e8d2;
+
+  /* status */
+  --ok: #2d6a45;
+  --ok-soft: #e0eee4;
+  --warn: #94620e;
+  --warn-soft: #f6ecd3;
+  --bad: #a03a2c;
+  --bad-soft: #f5e1dc;
+
+  --shadow-1: 0 1px 2px rgb(30 27 20 / 0.06);
+  --shadow-2: 0 10px 30px rgb(30 27 20 / 0.16);
+
+  /* type */
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-read: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-read: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.625rem;
+
+  /* spacing (4px scale) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --sidebar-w: 272px;
+  --content-w: 820px;
+  --topbar-h: 52px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 140ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151512;
+    --surface: #1c1b17;
+    --surface-2: #24231e;
+    --sunken: #100f0d;
+    --ink: #ece9df;
+    --ink-2: #b6b2a5;
+    --ink-3: #8b8775;
+    --line: #2f2d26;
+    --line-strong: #423f34;
+    --accent: #62b79a;
+    --accent-hover: #7cc8ae;
+    --accent-ink: #0e1b16;
+    --accent-soft: #1b2e27;
+    --gen: #dcaa52;
+    --gen-soft: #2b2312;
+    --ok: #6cc08c;
+    --ok-soft: #1b2c21;
+    --warn: #dcaa52;
+    --warn-soft: #2b2312;
+    --bad: #e58272;
+    --bad-soft: #341d19;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: 0 10px 30px rgb(0 0 0 / 0.55);
+  }
+}
