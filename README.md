@@ -132,13 +132,14 @@ Retrieved chunks are deduplicated to their parent passage before scoring, becaus
 Everything is reported overall and per category (`precedent`, `statute`, `procedural`, `factual`,
 `multi_hop`). Generation metrics (heuristic unless noted) are kept separate:
 
-| Metric | Default (free, deterministic) | With `USE_RAGAS=true` |
+| Metric | Default (free, deterministic) | With `USE_LLM_JUDGE=true` |
 |---|---|---|
-| Faithfulness | answer vocabulary found in context | Ragas LLM judge |
-| Answer relevance | query vocabulary covered by answer | Ragas LLM judge |
-| Context relevance | query vocabulary covered by context | Ragas LLM judge |
+| Faithfulness | answer vocabulary found in context | Groq LLM judge |
+| Answer relevance | query vocabulary covered by answer | Groq LLM judge |
+| Context relevance | query vocabulary covered by context | Groq LLM judge |
 
-The Ragas path is implemented but has **not** been run here (no API key). `pytest` and CI never call an LLM.
+The Groq judge asks for the three scores as strict JSON (see [`docs/ai.md`](docs/ai.md)). It was exercised live on one
+query, not run over the whole golden set. `pytest` and CI never call an LLM.
 
 ## 7. Statistical methodology
 
@@ -203,12 +204,15 @@ pip install -e ".[api]"
 uvicorn src.api.app:app --reload        # open http://localhost:8000
 ```
 
+- Open `http://localhost:8000` for the web UI (Ask and Evaluation views; see [`docs/frontend.md`](docs/frontend.md)).
+  It has no build step. `?mock=1` runs it against built-in mock data without a backend.
 - `POST /retrieve` → ranked passages with scores. `POST /ask` → `{"retrieval": …, "generation": …}`.
 - The two blocks are separate on purpose and there is **no combined score**. `generation.context_passage_ids`
   shows exactly what the answer could use; if the question is a golden query, `retrieval.golden_check`
   reports whether the relevant passages were retrieved and at which ranks.
-- Answers are extractive by default (no key). `GENERATION_BACKEND=llm` with `ANTHROPIC_API_KEY` uses an
-  Anthropic model (needs `pip install anthropic`); that path is **untested against the live API**.
+- Answers are extractive by default (no key). `GENERATION_BACKEND=llm` with `GROQ_API_KEY` has a Groq-hosted
+  model (default `openai/gpt-oss-20b`, free tier) write the answer from the numbered sources and cite them as
+  `[n]`. If the call fails, the response falls back to the extractive answer and says so in `generation.llm_error`.
 - Try it on `real_world` with *"What warnings must be given to a suspect before custodial questioning?"*:
   Miranda is retrieved at rank 1, but with a 2-source extractive answer the second citation is an
   unrelated procedure rule, showing how a weak second source leaks into the answer.
@@ -292,8 +296,8 @@ With only 19 queries and short documents, the working configs are effectively ti
   are optimistic and not statistically meaningful. Excerpts were not proofread against official sources.
 - Retrieval infrastructure is deliberately lightweight (no ANN index, no tuned fusion weights).
 - Absolute numbers depend on the embedding/reranker models.
-- Heuristic generation metrics are lexical proxies. The Ragas path and the LLM answer backend have not
-  been run against a live API here.
+- Heuristic generation metrics are lexical proxies. The Groq answer backend and judge were checked live on
+  a single query only; a judge's scores are model opinions, and Groq's free tier is rate-limited.
 - Error-analysis labels are rule-based heuristics.
 - Docker: the image built successfully, but running the tests inside the container was **not verified**
   (the host disk filled up during the run).
@@ -318,11 +322,13 @@ python -m src.evaluation.evaluate --dataset real_world
 python -m src.evaluation.run --config experiments/hybrid.yaml --dataset synthetic
 python -m src.evaluation.compare --baseline baseline --candidate hybrid
 python -m src.evaluation.error_analysis --config baseline --compare-with hybrid
-uvicorn src.api.app:app --reload                  # RAG demo
+uvicorn src.api.app:app --reload                  # web UI + API on http://localhost:8000
+node --test tests/frontend                        # frontend logic tests (Node 18+)
 ```
 
-First use downloads two small Hugging Face models. Optional: `pip install -e ".[ragas]"` plus
-`USE_RAGAS=true` and an API key (see `.env.example`).
+First use downloads two small Hugging Face models. Optional: put a free Groq key in `.env` (`GROQ_API_KEY`, see
+`.env.example`) to enable LLM answers (`GENERATION_BACKEND=llm`) and the LLM judge (`USE_LLM_JUDGE=true`).
+Groq is the only supported LLM provider. Details in [`docs/`](docs/).
 
 **Docker** (`Dockerfile`, `docker-compose.yml`):
 
@@ -330,7 +336,7 @@ First use downloads two small Hugging Face models. Optional: `pip install -e ".[
 docker compose up                                    # demo on http://localhost:8000
 docker compose run --rm app pytest                   # tests
 docker compose run --rm app python -m src.evaluation.evaluate
-docker compose run --rm -e ANTHROPIC_API_KEY=... -e GENERATION_BACKEND=llm app   # optional LLM answers
+docker compose run --rm -e GENERATION_BACKEND=llm app   # optional Groq answers (key from .env)
 ```
 
 ## 16. How to run CI
@@ -349,8 +355,9 @@ data/real_world/      public-domain excerpts + golden set + sources README
 scripts/              build_dataset.py, validate_dataset.py, build_real_world.py
 src/retrieval/        configs.py (YAML loader), retriever.py
 src/evaluation/       metrics, evaluate, run, compare, statistics, error_analysis, report, regression_gate
-src/generation/       generate.py (kept separate from retrieval metrics)
-src/api/              FastAPI demo + static page
+src/generation/       generate.py (answers + generation metrics), llm.py (Groq client)
+src/api/              FastAPI app + web UI (static/: HTML, CSS, ES modules)
+docs/                 architecture.md, model.md, ai.md, frontend.md
 tests/                unit/, integration/, evaluation/, test_regression_gate.py (the gate entry point)
 reports/              baseline_metrics.json (approved), comparison.*, dashboard.html, error_analysis.md
 runs/                 local timestamped experiment runs (git-ignored)

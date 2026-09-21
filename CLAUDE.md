@@ -21,8 +21,9 @@ data/real_world/     small public-domain benchmark (generalization check; never 
 scripts/             dataset generation + validation (build_dataset, validate_dataset, build_real_world)
 src/retrieval/       configs.py (loads experiments/*.yaml) + retriever.py
 src/evaluation/      metrics, evaluate, run, compare, statistics, error_analysis, report, regression_gate
-src/generation/      generate.py - kept fully separate from retrieval metrics
-src/api/             FastAPI RAG demo (retrieval and generation reported separately)
+src/generation/      generate.py + llm.py (Groq) - kept fully separate from retrieval metrics
+docs/                architecture.md, model.md, ai.md - keep in sync with the code
+src/api/             FastAPI app + web UI in static/ (retrieval and generation shown separately; see docs/frontend.md)
 tests/               unit/ integration/ evaluation/ + test_regression_gate.py (the gate entry point)
 reports/             baseline_metrics.json (approved CI baseline) + generated reports
 runs/                local timestamped experiment runs (git-ignored, never hand-edited)
@@ -41,7 +42,9 @@ python -m src.evaluation.evaluate --dataset real_world     # -> reports/real_wor
 python -m src.evaluation.run --config experiments/hybrid.yaml [--dataset real_world]   # -> runs/<ts>_<name>/
 python -m src.evaluation.compare --baseline baseline --candidate hybrid   # paired bootstrap CIs
 python -m src.evaluation.error_analysis [--config X] [--compare-with Y]   # failure taxonomy
-uvicorn src.api.app:app --reload          # RAG demo (needs `pip install -e ".[api]"`)
+uvicorn src.api.app:app --reload          # web UI + API (needs `pip install -e ".[api]"`)
+node --test tests/frontend                # frontend logic tests
+pytest tests/smoke -m smoke               # optional browser smoke tests (needs playwright + Chrome)
 
 # Reproduce a CI regression-gate failure on demand:
 EVAL_CONFIG=broken pytest tests/test_regression_gate.py
@@ -120,11 +123,20 @@ the retriever consumes (`chunk_size`, `chunk_overlap`, `method`, `reranker`,
 via `src.evaluation.run` writes a new `runs/` directory and never overwrites
 an old one.
 
+## Frontend rules
+
+- Vanilla HTML/CSS/ES modules only: no framework, build step or CDN. Change colours/spacing in `css/tokens.css`.
+- All network calls go through `js/api.js`; keep `js/mock.js` response shapes in sync with the API.
+- Never insert model output as HTML (use `textContent`/`h()`); keep retrieval and generation visually and
+  logically separate; never show a combined score.
+
 ## Reproducibility
 
 - All randomness (dataset generation, bootstrap) is seeded.
-- The optional Ragas and LLM-answer paths are untested against a live API;
-  pytest and CI must never require an API key or network beyond model downloads.
+- Groq (`GROQ_API_KEY`) is the ONLY LLM provider; do not add others. LLM paths
+  (`GENERATION_BACKEND=llm`, `USE_LLM_JUDGE=true`) are opt-in. pytest and CI must
+  never require an API key or network beyond model downloads (tests/conftest.py
+  forces them off). Never print, log, or commit the key; `.env` is git-ignored.
 - Embedding/reranker model names are configurable via `EMBEDDING_MODEL_NAME`
   / `RERANKER_MODEL_NAME` env vars (see `.env.example`), defaulting to
   small, fast sentence-transformers models.
