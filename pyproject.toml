@@ -16,7 +16,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ragas = ["ragas>=0.1", "langchain-anthropic>=0.1"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 
@@ -33,5 +32,6 @@ markers = [
     "unit: pure functions, no model downloads",
     "integration: runner, dataset and API plumbing (loads the small embedding model)",
     "evaluation: full retrieval over the golden sets, including the CI regression gate",
+    "smoke: browser smoke tests of the web UI (needs playwright and Chrome; not run in CI)",
     "slow: exercises real retrieval (model load + inference), not just pure functions",
 ]

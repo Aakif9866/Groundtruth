@@ -8,20 +8,24 @@ a retrieval regression) or an unfaithful answer from perfect context. This
 module only ever measures the second kind of failure.
 
 Metrics (all three exist in both modes):
-  - faithfulness       heuristic: answer vocabulary grounded in context | ragas: LLM judge
-  - answer_relevance   heuristic: query vocabulary covered by the answer | ragas: LLM judge
-  - context_relevance  heuristic: query vocabulary covered by the context | ragas: LLM judge
+  - faithfulness       heuristic: answer vocabulary grounded in context | llm judge (Groq)
+  - answer_relevance   heuristic: query vocabulary covered by the answer | llm judge (Groq)
+  - context_relevance  heuristic: query vocabulary covered by the context | llm judge (Groq)
 
 Default mode is a free, deterministic lexical-overlap heuristic (no API key
-needed, safe for CI). Setting USE_RAGAS=true (with an API key and `ragas`
-installed via `pip install -e ".[ragas]"`) switches to Ragas's
-faithfulness / answer_relevancy metrics with an LLM judge instead.
+needed, safe for CI). Setting USE_LLM_JUDGE=true with GROQ_API_KEY switches to a
+Groq-hosted LLM judge instead. Groq is the project's only LLM provider.
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
 
+from src.generation.llm import LLMError, groq_available, groq_chat, groq_model
 from src.retrieval.retriever import tokenize
+
+logger = logging.getLogger(__name__)
 
 
 def generate_answer(query: str, retrieved_texts: list[str], max_sentences: int = 3) -> str:
@@ -84,33 +88,54 @@ def evaluate_generation_heuristic(query: str, retrieved_texts: list[str], answer
     }
 
 
-def evaluate_generation_ragas(query: str, retrieved_texts: list[str]) -> dict:
-    """Requires `pip install -e ".[ragas]"` and ANTHROPIC_API_KEY or
-    OPENAI_API_KEY set. Raises if ragas isn't installed or no key is set —
-    callers should check USE_RAGAS and fall back to the heuristic path."""
-    from ragas import SingleTurnSample
-    from ragas.metrics import AnswerRelevancy, Faithfulness, LLMContextPrecisionWithoutReference
+JUDGE_KEYS = ("faithfulness", "answer_relevance", "context_relevance")
 
-    answer = generate_answer(query, retrieved_texts)
-    sample = SingleTurnSample(user_input=query, response=answer, retrieved_contexts=retrieved_texts)
 
-    return {
-        "answer": answer,
-        "faithfulness": Faithfulness().single_turn_score(sample),
-        "answer_relevance": AnswerRelevancy().single_turn_score(sample),
-        "context_relevance": LLMContextPrecisionWithoutReference().single_turn_score(sample),
-        "method": "ragas",
-    }
+def build_judge_prompt(query: str, context_passages: list[str], answer: str) -> str:
+    """Prompt asking an LLM judge for three 0-1 scores as strict JSON."""
+    context = "\n\n".join(f"[{i}] {t}" for i, t in enumerate(context_passages, start=1))
+    return (
+        "You are grading a retrieval-augmented answer. Score each criterion from 0.0 to 1.0.\n"
+        "- faithfulness: every claim in the answer is supported by the context (1 = fully supported).\n"
+        "- answer_relevance: the answer addresses the question (1 = fully addresses it).\n"
+        "- context_relevance: the context contains what is needed to answer the question (1 = fully).\n"
+        'Reply with ONLY a JSON object: {"faithfulness": x, "answer_relevance": y, "context_relevance": z}\n\n'
+        f"Question: {query}\n\nContext:\n{context}\n\nAnswer: {answer}"
+    )
+
+
+def parse_judge_scores(text: str) -> dict[str, float]:
+    """Parse the judge's JSON reply into scores clamped to [0, 1]; raises LLMError if malformed."""
+    try:
+        raw = json.loads(text)
+        return {k: min(1.0, max(0.0, float(raw[k]))) for k in JUDGE_KEYS}
+    except (ValueError, KeyError, TypeError):
+        raise LLMError(f"Judge reply was not the expected JSON: {text[:200]!r}") from None
+
+
+def evaluate_generation_llm_judge(query: str, retrieved_texts: list[str], answer: str | None = None) -> dict:
+    """LLM-judged faithfulness / answer relevance / context relevance via Groq.
+
+    Requires GROQ_API_KEY. Raises ``LLMError`` if the call or the reply fails.
+    """
+    if answer is None:
+        answer = generate_answer(query, retrieved_texts)
+    reply = groq_chat(
+        [{"role": "user", "content": build_judge_prompt(query, retrieved_texts, answer)}],
+        max_tokens=400, json_mode=True)
+    return {"answer": answer, **parse_judge_scores(reply), "method": f"llm_judge:{groq_model()}"}
 
 
 def evaluate_generation(query: str, retrieved_texts: list[str]) -> dict:
-    use_ragas = os.environ.get("USE_RAGAS", "false").lower() == "true"
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"))
-    if use_ragas and has_key:
+    """Heuristic scores by default; Groq LLM judge when USE_LLM_JUDGE=true and GROQ_API_KEY is set.
+
+    If the judge call fails, falls back to the heuristic and logs a warning.
+    """
+    if os.environ.get("USE_LLM_JUDGE", "false").lower() == "true" and groq_available():
         try:
-            return evaluate_generation_ragas(query, retrieved_texts)
-        except ImportError:
-            pass  # ragas extra not installed; fall back below
+            return evaluate_generation_llm_judge(query, retrieved_texts)
+        except LLMError as e:
+            logger.warning("LLM judge failed (%s); using heuristic metrics instead", e)
     return evaluate_generation_heuristic(query, retrieved_texts)
 
 
@@ -144,29 +169,24 @@ def _generate_extractive(query: str, passages: list[dict], max_sources: int = 2)
 
 
 def _generate_llm(query: str, passages: list[dict]) -> dict:
-    import anthropic  # optional dependency: pip install anthropic
-
-    client = anthropic.Anthropic()
-    model = os.environ.get("GENERATION_MODEL", "claude-haiku-4-5-20251001")
-    msg = client.messages.create(
-        model=model, max_tokens=500, messages=[{"role": "user", "content": build_llm_prompt(query, passages)}])
-    answer = "".join(block.text for block in msg.content if getattr(block, "type", "") == "text")
+    answer = groq_chat([{"role": "user", "content": build_llm_prompt(query, passages)}], max_tokens=600)
     cited = [i for i in range(1, len(passages) + 1) if f"[{i}]" in answer]
     citations = [{"passage_id": passages[i - 1]["passage_id"], "source_number": i} for i in cited]
-    return {"answer": answer, "citations": citations, "method": f"llm:{model}"}
+    return {"answer": answer, "citations": citations, "method": f"llm:{groq_model()}"}
 
 
 def generate_cited_answer(query: str, passages: list[dict]) -> dict:
     """Answer from retrieved passages (rank order) with citations.
 
-    Extractive by default (no API key, deterministic). If GENERATION_BACKEND=llm and
-    ANTHROPIC_API_KEY is set, uses an Anthropic model; falls back to extractive if the
-    ``anthropic`` package is missing. The LLM path has not been exercised against the
-    live API in this repository's tests.
+    Extractive by default (no key, deterministic). With GENERATION_BACKEND=llm and
+    GROQ_API_KEY set, a Groq-hosted model writes the answer from the numbered sources.
+    If the LLM call fails the extractive answer is returned and the failure is
+    reported in an ``llm_error`` field, so a fallback is never mistaken for an LLM answer.
     """
-    if os.environ.get("GENERATION_BACKEND", "extractive") == "llm" and os.environ.get("ANTHROPIC_API_KEY"):
+    if os.environ.get("GENERATION_BACKEND", "extractive") == "llm" and groq_available():
         try:
             return _generate_llm(query, passages)
-        except ImportError:
-            pass
+        except LLMError as e:
+            logger.warning("LLM generation failed (%s); using extractive answer", e)
+            return {**_generate_extractive(query, passages), "llm_error": str(e)}
     return _generate_extractive(query, passages)

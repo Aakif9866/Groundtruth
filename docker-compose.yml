@@ -3,7 +3,7 @@
 #   docker compose run --rm app pytest                 # test suite
 #   docker compose run --rm app python -m src.evaluation.evaluate
 #   docker compose run --rm app python -m src.evaluation.run --config experiments/hybrid.yaml
-# Optional LLM features read keys from the environment / a local .env file (never committed).
+# Optional Groq features (GROQ_API_KEY) are read from a local .env file (never committed).
 services:
   app:
     build: .
